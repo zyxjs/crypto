@@ -116,7 +116,7 @@ public class Simulation {
       // print results
       for (int i = 0; i < numNodes; i++) {
          Set<Transaction> transactions = nodes[i].sendToFollowers();
-         System.out.println("Transaction ids that Node " + i + " believes consensus on:");
+         System.out.println("Transaction ids that Node " + i + " believesconsensuson:");
          for (Transaction tx : transactions)
             System.out.println(tx.id);
          System.out.println();
