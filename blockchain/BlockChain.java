@@ -1,5 +1,5 @@
-import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -12,7 +12,7 @@ import java.util.Set;
 public class BlockChain {
     public static final int CUT_OFF_AGE = 10;
 
-    private ArrayList<Set<Block>> chain;
+    private ArrayList<ArrayList<Block>> chain;
     private Map<byte[], UTXOPool> utxoPools;
     private TransactionPool txPool;
 
@@ -23,7 +23,7 @@ public class BlockChain {
     public BlockChain(Block genesisBlock) {
         // IMPLEMENT THIS
 
-        HashSet genesisBlockSet = new HashSet<>();
+        ArrayList<Block> genesisBlockSet = new ArrayList<>();
         genesisBlockSet.add(genesisBlock);
         chain = new ArrayList<>();
         chain.add(genesisBlockSet);
@@ -39,28 +39,8 @@ public class BlockChain {
     /** Get the maximum height block */
     public Block getMaxHeightBlock() {
         // IMPLEMENT THIS
-        Block maxHeightBlock = null;
-
-        // get max height block(s)
-        for (Block b : chain.get(chain.size() - 1)) {
-            // get oldest block in max height set (smallest hash)
-            if (maxHeightBlock == null) {
-                maxHeightBlock = b;
-            } else {
-                byte[] blockHash = b.getHash();
-                byte[] maxHeightBlockHash = maxHeightBlock.getHash();
-                for (int i = 0; i < blockHash.length; ++i) {
-                    if (i >= maxHeightBlockHash.length) {
-                        break;
-                    }
-                    if (blockHash[i] < maxHeightBlockHash[i]) {
-                        maxHeightBlock = b;
-                        break;
-                    }
-                }
-            }
-        }
-        return maxHeightBlock;
+        // genesis block guaranteed
+        return chain.get(chain.size() - 1).get(0);
     }
 
     /** Get the UTXOPool for mining a new block on top of max height block */
@@ -96,63 +76,67 @@ public class BlockChain {
             return false;
         }
 
-        // DONE 1 - iterate through chain to find prev block desc height order
-        // DONE 2 - add block to chain
-        // DONE 3 - process txs using txhandler and set utxo pool for new block
-        // DONE 4 - process coinbase tx
-        // DONE 5 - if height>limit remove blocks in oldest height
-        // DONE 6 - remove block transactions from pool
-        for (int i = chain.size() - 1; i >= 0; --i) {
-            for (Block b : chain.get(i)) {
-                if (block.getPrevBlockHash() == b.getHash()) {
+        // parent not found (culled by CUT_OFF_AGE)
+        int parentHeight = getParentBlockHeight(block);
+        if (parentHeight < 0) {
+            return false;
+        }
 
-                    // validate block transactions
-                    TxHandler handler = new TxHandler(utxoPools.get(b.getHash()));
-                    if (!handleBlockTxs(block, handler)) {
-                        return false;
-                    }
+        // validate block transactions
+        TxHandler handler = new TxHandler(utxoPools.get(block.getPrevBlockHash()));
+        if (!handleBlockTxs(block, handler)) {
+            return false;
+        }
 
-                    // set UTXO pool for new block
-                    utxoPools.put(block.getHash(), handler.getUTXOPool());
+        // set UTXO pool for new block
+        utxoPools.put(block.getHash(), handler.getUTXOPool());
 
-                    // process coinbase tx
-                    handleCoinbase(block);
+        // process coinbase tx
+        handleCoinbase(block);
 
-                    if (i + 1 >= chain.size()) {
-                        // new longest chain
-                        Set<Block> maxHeightBlockSet = new HashSet<>();
-                        maxHeightBlockSet.add(block);
-                        chain.add(maxHeightBlockSet);
+        // add block
+        if (parentHeight + 1 >= chain.size()) {
+            // new longest chain
+            ArrayList<Block> maxHeightBlockList = new ArrayList<>();
+            maxHeightBlockList.add(block);
+            chain.add(maxHeightBlockList);
 
-                    } else {
-                        // add to set for blocks in existing height
-                        chain.get(i + 1).add(block);
-                    }
+        } else {
+            // add to set for blocks in existing height
+            chain.get(parentHeight + 1).add(block);
+        }
 
-                    // remove block txs from pool
-                    for (Transaction t : block.getTransactions()) {
-                        txPool.removeTransaction(t.getHash());
-                    }
+        // remove block txs from pool
+        for (Transaction t : block.getTransactions()) {
+            txPool.removeTransaction(t.getHash());
+        }
 
-                    // remove old blocks
-                    if (chain.size() > CUT_OFF_AGE + 1) {
-                        Set<Block> removedBlocks = chain.remove(0);
-                        for (Block removedBlock : removedBlocks) {
-                            utxoPools.remove(removedBlock.getHash());
-                        }
-                    }
-                    return true;
-                }
+        // remove old blocks
+        if (chain.size() > CUT_OFF_AGE + 1) {
+            ArrayList<Block> removedBlocks = chain.remove(0);
+            for (Block removedBlock : removedBlocks) {
+                utxoPools.remove(removedBlock.getHash());
             }
         }
 
-        return false;
+        return true;
     }
 
     /** Add a transaction to the transaction pool */
     public void addTransaction(Transaction tx) {
         // IMPLEMENT THIS
         txPool.addTransaction(tx);
+    }
+
+    private int getParentBlockHeight(Block block) {
+        for (int i = chain.size() - 1; i >= 0; --i) {
+            for (Block b : chain.get(i)) {
+                if (block.getPrevBlockHash() == b.getHash()) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     // pre: utxopool is set for block in utxoPools
